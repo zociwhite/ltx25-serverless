@@ -19,6 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install uv for fast & compatible builds (ltx-core uses uv_build backend)
 RUN pip install --no-cache-dir uv
 
+# Base image ships an externally-managed Python (PEP 668); allow system installs.
+ENV UV_BREAK_SYSTEM_PACKAGES=1
+
 # Clone LTX-2 repo
 RUN git clone --depth 1 https://github.com/Lightricks/LTX-2.git /opt/LTX-2
 
@@ -28,6 +31,9 @@ RUN uv pip install --system --no-cache -e /opt/LTX-2/packages/ltx-core && \
 
 COPY requirements.txt .
 RUN uv pip install --system --no-cache -r requirements.txt
+
+# Sanity check: torch must stay on the base image build (do not let uv swap it)
+RUN python -c "import torch; print('torch', torch.__version__)"
 
 # Model path defaults pointing to persistent Network Volume (/workspace/models)
 ENV LTX25_MODELS_DIR=/workspace/models/ltx-2.5
