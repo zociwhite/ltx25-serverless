@@ -13,7 +13,7 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 from ltx_core.loader import LTXV_LORA_COMFY_RENAMING_MAP, LoraPathStrengthAndSDOps
 from ltx_core.model.video_vae import get_video_chunks_number
-from ltx_pipelines.chunks.export import pipeline_output_from_chunks
+from ltx_pipelines.chunks.export import split_decoded_chunks
 from ltx_pipelines.chunks.layout import ChunkConfig
 from ltx_pipelines.distilled import DistilledPipeline
 from ltx_pipelines.retake import RetakePipeline
@@ -162,6 +162,9 @@ def _load_retake_pipeline(loras_key: str = "", loras_spec: list | None = None) -
 
 
 def _download_or_decode(src: str, suffix: str) -> str:
+    # Local filesystem path already on the volume: use it directly.
+    if not re.match(r"^https?://", src) and not src.startswith("data:") and os.path.exists(src):
+        return src
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     if re.match(r"^https?://", src):
         resp = requests.get(src, timeout=180)
@@ -274,11 +277,18 @@ def handler(job: dict) -> dict:
     raw_frames = int(duration_sec * fps)
     num_frames = _snap_frames(raw_frames)
 
-    loras_spec = job_input.get("loras") or []
-    loras_key = "|".join(
-        sorted(f"{e.get('path') or e.get('url') or e.get('name')}:{e.get('strength', 1.0)}"
-               for e in loras_spec if isinstance(e, dict))
-    ) if loras_spec else ""
+    # Normalize LoRAs spec: accept strings, dicts ({path|url, strength})
+    raw_loras = job_input.get("loras") or []
+    loras_spec = []
+    for item in raw_loras:
+        if isinstance(item, str) and item.strip():
+            loras_spec.append({"path": item.strip(), "strength": 1.0})
+        elif isinstance(item, dict):
+            src = (item.get("path") or item.get("url") or item.get("name") or "").strip()
+            if src:
+                loras_spec.append({"path": src, "strength": float(item.get("strength", 1.0))})
+
+    loras_key = "|".join(sorted(f"{e['path']}:{e['strength']}" for e in loras_spec))
 
     # Long clips (> ~6.7s / 161 frames) use overlapping temporal windows.
     use_chunked = num_frames > 161 and mode in distilled_modes
@@ -312,18 +322,19 @@ def handler(job: dict) -> dict:
                 chunks_iter, stitched_frames, tiling_cfg = pipeline.stream_chunks(
                     chunk_config=chunk_cfg, **call_kwargs
                 )
-                output = pipeline_output_from_chunks(
-                    chunks_iter, num_frames=stitched_frames, tiling_config=tiling_cfg
-                )
+                video, audio, _ = split_decoded_chunks(chunks_iter)
+                chunks_num = 1
                 num_frames = stitched_frames
             else:
                 output = pipeline(**call_kwargs)
+                video = output.video
+                audio = output.audio
+                chunks_num = get_video_chunks_number(output.num_frames, output.tiling_config)
 
-            chunks_num = get_video_chunks_number(output.num_frames, output.tiling_config)
             encode_video(
-                video=output.video,
+                video=video,
                 fps=fps,
-                audio=output.audio,
+                audio=audio,
                 output_path=out_file,
                 video_chunks_number=chunks_num,
             )
@@ -382,7 +393,7 @@ def handler(job: dict) -> dict:
             "height": height,
             "has_audio": True,
             "chunked": use_chunked,
-            "loras": [e.get("path") or e.get("url") or e.get("name") for e in loras_spec] if loras_spec else [],
+            "loras": [e["path"] for e in loras_spec],
             "execution_time": round(exec_time, 2),
         }
 
