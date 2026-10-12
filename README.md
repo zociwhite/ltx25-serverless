@@ -19,6 +19,14 @@ GitHub Actions → Docker Hub (z0ci/ltx25-serverless:latest) → RunPod Serverle
 - **Kuantisasi**: `FP8_CAST` + `OffloadMode.CPU` (muat di 48 GB)
 - **Region**: EU-RO-1 (selaras volume & S3 existing)
 
+## Live Deployment
+- **Endpoint ID**: `5ky9a1hacoybl1`
+- **Template ID**: `ha1fp46pv8`
+- **Run URL**: `https://api.runpod.ai/v2/5ky9a1hacoybl1/run`
+- **Docker Image**: `z0ci/ltx25-serverless:latest` (15.39 GB)
+- **GPU Pools**: `AMPERE_48` (A40 @ $1.22/h) + `ADA_48_PRO` (L40S @ $1.75/h)
+- **Scaling**: min 0, max 1, idleTimeout 30s (Scale-to-Zero)
+
 ## Deploy
 
 ### 1. Build Image (GitHub Actions)
