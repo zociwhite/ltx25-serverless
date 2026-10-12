@@ -128,6 +128,14 @@ def _snap_frames(target: int) -> int:
     return int(8 * k + 1)
 
 
+def _snap_resolution(value: int, divisor: int) -> int:
+    # Two-stage pipelines (Distilled) require multiples of 64; one-stage (Retake) 32.
+    snapped = max(divisor, round(value / divisor) * divisor)
+    if snapped != value:
+        logger.warning("Resolution %d snapped to %d (must be a multiple of %d).", value, snapped, divisor)
+    return int(snapped)
+
+
 @torch.inference_mode()
 def handler(job: dict) -> dict:
     job_input = job.get("input") or {}
@@ -137,8 +145,11 @@ def handler(job: dict) -> dict:
         raise ValueError("'prompt' is required")
 
     seed = int(job_input.get("seed", 42))
-    width = int(job_input.get("width", 1024))
-    height = int(job_input.get("height", 576))
+    raw_w = int(job_input.get("width", 1024))
+    raw_h = int(job_input.get("height", 576))
+    divisor = 64 if mode in ("t2v", "i2v") else 32
+    width = _snap_resolution(raw_w, divisor)
+    height = _snap_resolution(raw_h, divisor)
     fps = int(job_input.get("fps", 24))
 
     duration_sec = float(job_input.get("duration", 3.4))
