@@ -43,6 +43,7 @@ ENV VIDEO_VAE_PATH=/workspace/models/ltx-2.5/vae/ltx-2.5-video-vae-bf16.safetens
 ENV AUDIO_VAE_PATH=/workspace/models/ltx-2.5/vae/ltx-2.5-audio-vae-bf16.safetensors
 ENV SPATIAL_UPSAMPLER_PATH=/workspace/models/ltx-2.5/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors
 
+COPY compat_uncensored.py .
 COPY handler.py .
 
 CMD ["python", "-u", "handler.py"]

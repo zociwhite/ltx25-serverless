@@ -11,6 +11,13 @@ import torch
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
+# Apply runtime compatibility shims for uncensored checkpoints (dtype + key prefix)
+try:
+    import compat_uncensored
+    compat_uncensored.apply()
+except Exception as _exc:  # pragma: no cover - defensive
+    logging.getLogger("ltx25-handler").warning("compat_uncensored failed to load (%s)", _exc)
+
 from ltx_core.loader import LTXV_LORA_COMFY_RENAMING_MAP, LoraPathStrengthAndSDOps
 from ltx_core.model.video_vae import get_video_chunks_number
 from ltx_pipelines.chunks.export import split_decoded_chunks
@@ -203,18 +210,30 @@ def _collect_images(job_input: dict, num_frames: int, tmp_files: list) -> list[I
     Sources accepted:
       - image / image_base64 / image_url           -> start image at frame 0
       - image_end / image_end_base64 / image_end_url -> end image at frame num_frames - 1
-      - keyframes: [ {image|url|path, frame_idx, strength} ]
+      - keyframes: [ {image|url|path, frame_idx, strength, crf} ]
     frame_idx must satisfy 0 <= frame_idx < num_frames (LTX rejects negatives).
+
+    Reference fidelity:
+      - strength (0.5-1.0): how strictly the latent adheres to the reference.
+      - crf: H.264 re-compression quality for the reference. 0 = lossless (pixel-perfect,
+        sharpest). None = model default (lossy). Default here is 0 for crisp I2V references.
     """
     images_input: list[ImageConditioningInput] = []
 
-    def _add(src, frame_idx, strength):
+    def _add(src, frame_idx, strength, crf):
         idx = int(frame_idx)
         if idx < 0 or idx >= num_frames:
             raise ValueError(f"frame_idx={idx} is outside [0, {num_frames})")
         p = _download_or_decode(src, ".png")
         tmp_files.append(p)
-        images_input.append(ImageConditioningInput(path=p, frame_idx=idx, strength=float(strength)))
+        kwargs = {"path": p, "frame_idx": idx, "strength": float(strength)}
+        if crf is not None:
+            kwargs["crf"] = int(crf)
+        images_input.append(ImageConditioningInput(**kwargs))
+
+    global_strength = float(job_input.get("strength", 1.0))
+    raw_crf = job_input.get("crf")
+    global_crf = int(raw_crf) if raw_crf is not None else 0  # 0 = lossless crisp references
 
     start_src = (
         job_input.get("start_image")
@@ -223,7 +242,8 @@ def _collect_images(job_input: dict, num_frames: int, tmp_files: list) -> list[I
         or job_input.get("image_url")
     )
     if start_src:
-        _add(start_src, 0, float(job_input.get("start_strength", 1.0)))
+        _add(start_src, 0, job_input.get("start_strength", global_strength),
+             job_input.get("start_crf", global_crf))
 
     end_src = (
         job_input.get("end_image")
@@ -232,13 +252,16 @@ def _collect_images(job_input: dict, num_frames: int, tmp_files: list) -> list[I
         or job_input.get("image_end_url")
     )
     if end_src:
-        _add(end_src, num_frames - 1, float(job_input.get("end_strength", job_input.get("image_end_strength", 1.0))))
+        _add(end_src, num_frames - 1,
+             job_input.get("end_strength", job_input.get("image_end_strength", global_strength)),
+             job_input.get("end_crf", global_crf))
 
     for kf in job_input.get("keyframes") or []:
         src = kf.get("image") or kf.get("image_base64") or kf.get("image_url") or kf.get("url") or kf.get("path")
         if not src:
             continue
-        _add(src, kf.get("frame_idx", 0), kf.get("strength", 1.0))
+        _add(src, kf.get("frame_idx", 0), kf.get("strength", global_strength),
+             kf.get("crf", global_crf))
 
     # De-duplicate identical (frame_idx) start/end collisions by keeping the first.
     seen = set()
