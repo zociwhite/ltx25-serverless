@@ -355,13 +355,14 @@ def handler(job: dict) -> dict:
                 chunks_iter, stitched_frames, tiling_cfg = pipeline.stream_chunks(
                     chunk_config=chunk_cfg, **call_kwargs
                 )
-                video, audio, _ = split_decoded_chunks(chunks_iter)
+                video, audio, audio_sr = split_decoded_chunks(chunks_iter)
                 chunks_num = 1
                 num_frames = stitched_frames
             else:
                 output = pipeline(**call_kwargs)
                 video = output.video
                 audio = output.audio
+                audio_sr = getattr(output.audio, "sampling_rate", None)
                 chunks_num = get_video_chunks_number(output.num_frames, output.tiling_config)
 
             encode_video(
@@ -370,6 +371,7 @@ def handler(job: dict) -> dict:
                 audio=audio,
                 output_path=out_file,
                 video_chunks_number=chunks_num,
+                audio_sampling_rate=audio_sr,
             )
 
         elif mode == "retake":
@@ -406,6 +408,7 @@ def handler(job: dict) -> dict:
                 audio=output.audio,
                 output_path=out_file,
                 video_chunks_number=chunks_num,
+                audio_sampling_rate=getattr(output.audio, "sampling_rate", None),
             )
             fps = actual_fps
             num_frames = output.num_frames
