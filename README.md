@@ -1,16 +1,17 @@
-# LTX 2.5 Serverless Worker (Native ltx-pipelines)
+# LTX 2.5 Serverless Worker (Uncensored Native ltx-pipelines)
 
-Worker RunPod Serverless untuk **LTX 2.5 (Lightricks)** menggunakan **native `ltx-pipelines` Python API** (tanpa ComfyUI).
+Worker RunPod Serverless untuk **LTX 2.5 (Lightricks)** menggunakan **native `ltx-pipelines` Python API** (tanpa ComfyUI), dengan bobot **UNCENSORED (5 LoRAs baked-in: Eros10 NSFW, DMD Turbo 4-step, IC-LoRA, Detailer, Img2Vid)** dan **Heretic Gemma 4 12B Text Encoder**.
 
 ## Fitur
 - **T2V + Audio**: Text-to-Video dengan audio native tersinkronisasi
-- **I2V + Audio**: Image-to-Video dari 1 gambar awal
+- **I2V + Audio (Enhanced)**: Image-to-Video dari 1 gambar awal dengan dukungan **Lossless CRF 0 (pixel-perfect, ekstra tajam)** dan slider `strength` (0.5–1.0)
+- **Multi-Keyframe / Checkpoint**: Referensi multi-gambar di frame bebas (`frame_idx`, `strength`, `crf`) sebagai anchor gerak
 - **Interpolasi (Start + End Image)**: Morfing/transisi antara gambar awal (frame 0) dan gambar akhir (frame N-1)
-- **Multi-Keyframe**: Beberapa gambar di posisi frame bebas (`frame_idx`, `strength`) sebagai anchor
-- **Video Panjang (Long Video)**: Hingga 20 detik via overlapping temporal windows (`stream_chunks`)
-- **LoRA Kustom**: Injeksi LoRA ComfyUI-compatible (anatomi tubuh, gaya, karakter) dengan strength per-LoRA
+- **Video Panjang (Long Video)**: Hingga 20 detik per chunk via overlapping temporal windows (`stream_chunks`)
+- **Storyboard Bersambung**: Rantai scene multi-checkpoint digabung otomatis via FFmpeg menjadi video utuh s/d 5 menit
+- **LoRA Kustom**: Injeksi LoRA ComfyUI-compatible tambahan dinamis
 - **Retake**: Regenerasi segmen video eksisting (visual dan/atau audio) via `RetakePipeline`
-- **Enhance Prompt**: Peningkatan prompt otomatis via Gemma
+- **Compatibility Shims (`compat_uncensored.py`)**: Auto-upcast F.linear (FP8 connector weights) + fallback key mapper ComfyUI/split format (bebas error missing indices block weights)
 
 ## Arsitektur
 ```
