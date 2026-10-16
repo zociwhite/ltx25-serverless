@@ -29,6 +29,7 @@ def apply() -> None:
     _patch_transformer_prefix()
     _patch_embeddings_prefix()
     _patch_block_key_scan()
+    _patch_prompt_enhancer()
 
 
 def _patch_linear_dtype() -> None:
@@ -141,3 +142,37 @@ def _patch_block_key_scan() -> None:
         logger.info("compat: block key scan fallback enabled.")
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("compat: block scan patch skipped (%s).", exc)
+
+
+def _patch_prompt_enhancer() -> None:
+    """Silently ignore `enhance_first_prompt=True` when the encoder model_type
+    is `gemma4_unified` (which lacks generative instruct weights).
+
+    Prevents: ValueError: Prompt enhancement with encode root model_type='gemma4_unified'
+    requires --prompt-enhancer-gemma-root pointing at a generative instruct checkpoint.
+    """
+    try:
+        from ltx_pipelines.utils import blocks
+
+        if getattr(blocks.PromptEncoder, "_ltx25_compat_enhancer", False):
+            return
+        orig_call = blocks.PromptEncoder.__call__
+
+        def _safe_call(self, prompts, *, enhance_first_prompt=False, **kwargs):
+            if enhance_first_prompt:
+                model_type = getattr(self, "_encode_model_type", "")
+                enhancer_root = getattr(self, "_prompt_enhancer_gemma_root", None)
+                if model_type != "gemma3" and not enhancer_root:
+                    logger.info(
+                        "compat: disabling enhance_first_prompt for %s (no separate enhancer root).",
+                        model_type,
+                    )
+                    enhance_first_prompt = False
+            return orig_call(self, prompts, enhance_first_prompt=enhance_first_prompt, **kwargs)
+
+        _safe_call._ltx25_compat_enhancer = True
+        blocks.PromptEncoder.__call__ = _safe_call
+        logger.info("compat: prompt enhancer guard enabled.")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("compat: prompt enhancer patch skipped (%s).", exc)
+

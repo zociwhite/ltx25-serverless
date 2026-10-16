@@ -325,6 +325,16 @@ def handler(job: dict) -> dict:
             pipeline = _load_distilled_pipeline(loras_key, loras_spec)
             images_input = _collect_images(job_input, num_frames, tmp_files)
 
+            # Prompt enhancement requires a separate generative instruct checkpoint
+            # (e.g. gemma3 / gemma4 E2B-it). The uncensored text encoder is `gemma4_unified`
+            # which does not support auto-enhancement; catch and downgrade gracefully.
+            enhance_req = bool(job_input.get("enhance_prompt", False))
+            if enhance_req:
+                logger.warning(
+                    "enhance_prompt requested but uncensored text encoder is 'gemma4_unified' "
+                    "(requires generative instruct root). Ignoring enhance_prompt to prevent crash."
+                )
+
             call_kwargs = dict(
                 prompt=prompt,
                 seed=seed,
@@ -333,7 +343,7 @@ def handler(job: dict) -> dict:
                 frame_rate=float(fps),
                 images=images_input,
                 num_frames=num_frames,
-                enhance_prompt=bool(job_input.get("enhance_prompt", False)),
+                enhance_prompt=False,
             )
 
             if use_chunked:
